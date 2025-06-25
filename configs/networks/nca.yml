@@ -1,0 +1,6 @@
+network:
+  name: nca
+  num_classes: '@{dataset.num_classes}'
+  pretrained: True          # set 'True' to load pretrained model
+  checkpoint: ./results/class_cifar10.best.pth            # ignore if pretrained is false
+  num_gpus: '@{num_gpus}'

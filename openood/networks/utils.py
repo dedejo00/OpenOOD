@@ -38,6 +38,7 @@ from .wrn import WideResNet
 from .rts_net import RTSNet
 from .palm_net import PALMNet
 from .ascood_net import ASCOODNet
+from .nca import BasicNCAModel
 
 
 def get_network(network_config):
@@ -365,6 +366,18 @@ def get_network(network_config):
         bn = BN_layer(AttnBasicBlock, 2)
         decoder = De_ResNet18_256x256()
         net = {'encoder': encoder, 'bn': bn, 'decoder': decoder}
+    elif network_config.name == 'nca':
+        #TODO: Add config
+        net = BasicNCAModel(
+        device=network_config.device,
+        num_output_channels=10,
+        num_image_channels=3,
+        num_hidden_channels=20,
+        num_classes=10,
+        use_alive_mask=False,
+        fire_rate=0.5,
+        filter_padding="circular",
+        pad_noise=True)
     else:
         raise Exception('Unexpected Network Architecture!')
 
