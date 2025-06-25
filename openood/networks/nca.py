@@ -211,10 +211,12 @@ class BasicNCAModel(nn.Module):
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
 
         if self.threshold_activations_react:
-            feature = self.network[::-2](dx)
+            feature = self.network[-3:-2](dx)
+            # print(dx.shape)
             feature = feature.clip(max=self.threshold_activations_react)
-            feature = feature.view(feature.size(0), -1)
-            dx = self.network[1:](feature)
+            #feature = feature.view(feature.size(0), -1)
+            # print(feature.shape)
+            dx = self.network[-2:](feature)
         else:
             dx = self.network(dx)
 

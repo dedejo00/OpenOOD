@@ -65,7 +65,7 @@ for mode in modes:
         data = batch['data'].cuda()
         label = batch['label']
         with torch.no_grad():
-            logits_cls = net(data, return_feature=False)
+            logits_cls = net.forward_threshold(data, threshold=0.062438145)
         logits_list.append(logits_cls.data.to('cpu').numpy())
         #feature_list.append(feature.data.to('cpu').numpy())
         label_list.append(label.numpy())
@@ -99,7 +99,7 @@ for ood_split in ood_splits:
             label = batch['label']
 
             with torch.no_grad():
-                logits_cls = net(data, return_feature=False)
+                logits_cls = net.forward_threshold(data, threshold=0.062438145)
             logits_list.append(logits_cls.data.to('cpu').numpy())
             #feature_list.append(feature.data.to('cpu').numpy())
             label_list.append(label.numpy())
