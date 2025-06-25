@@ -7,7 +7,7 @@ from openood.networks import ResNet18_32x32 # just a wrapper around the ResNet
 # load the model
 net = ResNet18_32x32(num_classes=10)
 net.load_state_dict(
-    torch.load('/home/jonathan/Downloads/cifar10_resnet18_32x32_base_e100_lr0.1_default/s0/best.ckpt')
+    torch.load('results/cifar10_resnet18_32x32_base_e100_lr0.1_default/s0/best.ckpt')
 )
 net.cuda()
 net.eval();
