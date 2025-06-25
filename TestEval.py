@@ -7,6 +7,7 @@ from openood.networks import get_network
 from tqdm import tqdm
 import numpy as np
 import torch
+import os
 import os.path as osp
 
 
