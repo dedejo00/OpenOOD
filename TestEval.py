@@ -183,18 +183,12 @@ for split_type in split_types:
         postprocess_results[split_type][dataset_name] = [pred, conf, gt]
 
 def print_all_metrics(metrics):
-    [fpr, auroc, aupr_in, aupr_out,
-        ccr_4, ccr_3, ccr_2, ccr_1, accuracy] \
-        = metrics
+    [fpr, auroc, aupr_in, aupr_out, accuracy] = metrics
     print('FPR@95: {:.2f}, AUROC: {:.2f}'.format(100 * fpr, 100 * auroc),
             end=' ',
             flush=True)
     print('AUPR_IN: {:.2f}, AUPR_OUT: {:.2f}'.format(
         100 * aupr_in, 100 * aupr_out),
-            flush=True)
-    print('CCR: {:.2f}, {:.2f}, {:.2f}, {:.2f},'.format(
-        ccr_4 * 100, ccr_3 * 100, ccr_2 * 100, ccr_1 * 100),
-            end=' ',
             flush=True)
     print('ACC: {:.2f}'.format(accuracy * 100), flush=True)
     print(u'\u2500' * 70, flush=True)
