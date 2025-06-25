@@ -380,7 +380,7 @@ def get_network(network_config):
         pad_noise=True)
     else:
         raise Exception('Unexpected Network Architecture!')
-
+    print(network_config)
     if network_config.pretrained:
         if type(net) is dict:
             if isinstance(network_config.checkpoint, list):
@@ -409,6 +409,10 @@ def get_network(network_config):
             pass
         else:
             try:
+                print(network_config.name)
+                print(network_config.checkpoint)
+                torch.load(network_config.checkpoint)
+                print(net)
                 net.load_state_dict(torch.load(network_config.checkpoint),
                                     strict=False)
             except RuntimeError:

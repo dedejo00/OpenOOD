@@ -65,6 +65,7 @@ class BasicNCAModel(nn.Module):
         pad_noise: bool = False,
         autostepper: Optional[AutoStepper] = None,
         pixel_wise_loss: bool = False,
+        threshold_activations_react: float = None
     ):
         """
         Constructor.
@@ -112,6 +113,7 @@ class BasicNCAModel(nn.Module):
         self.num_classes = num_classes
         self.pixel_wise_loss = pixel_wise_loss
         self.validation_metric = "accuracy_micro"
+        self.threshold_activations_react = threshold_activations_react
 
 
         if num_learned_filters > 0:
@@ -207,7 +209,14 @@ class BasicNCAModel(nn.Module):
 
         # Compute delta from FFNN network
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
-        dx = self.network(dx)
+
+        if self.threshold_activations_react:
+            feature = self.network[::-2](dx)
+            feature = feature.clip(max=self.threshold_activations_react)
+            feature = feature.view(feature.size(0), -1)
+            dx = self.network[1:](feature)
+        else:
+            dx = self.network(dx)
 
         # Stochastic weight update
         fire_rate = self.fire_rate
@@ -234,7 +243,7 @@ class BasicNCAModel(nn.Module):
             x = x.permute(1, 0, 2, 3)  # C B W H --> B C W H
         return x
 
-    def forward(
+    def forward_intern(
         self,
         x: torch.Tensor,
         steps: int = 1,
@@ -317,7 +326,7 @@ class BasicNCAModel(nn.Module):
 
         Returns:
         """
-
+        return self.classify(x, 72, reduce=False)
 
     def loss(self, image: torch.Tensor, label: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
@@ -510,9 +519,9 @@ class BasicNCAModel(nn.Module):
         self.eval()
         with torch.no_grad():
             x = image.clone()
-            x = self.pad_input(x, self, noise=self.pad_noise)
+            x = pad_input(x, self, noise=self.pad_noise)
             x = self.prepare_input(x)
-            x = self.forward(x, steps=steps)  # type: ignore[assignment]
+            x = self.forward_intern(x, steps=steps)  # type: ignore[assignment]
             return x
 
     def validate(
@@ -529,32 +538,32 @@ class BasicNCAModel(nn.Module):
         metrics = self.metrics(pred, label.to(self.device))
         return metrics, pred
 
-    def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
-        """
-        Pads input tensor along channel dimension to match the expected number of
-        channels required by the NCA model. Pads with either Gaussian noise or zeros,
-        depending on "noise" parameter. Gaussian noise has mean of 0.5 and sigma 0.225.
+def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
+    """
+    Pads input tensor along channel dimension to match the expected number of
+    channels required by the NCA model. Pads with either Gaussian noise or zeros,
+    depending on "noise" parameter. Gaussian noise has mean of 0.5 and sigma 0.225.
 
-        :param x [torch.Tensor]: Input image tensor, BCWH.
-        :param nca [BasicNCAModel]: NCA model definition.
-        :param noise [bool]: Whether to pad with noise. Otherwise zeros. Defaults to True.
+    :param x [torch.Tensor]: Input image tensor, BCWH.
+    :param nca [BasicNCAModel]: NCA model definition.
+    :param noise [bool]: Whether to pad with noise. Otherwise zeros. Defaults to True.
 
-        :returns: Input tensor, BCWH, padded along the channel dimension.
-        """
-        if x.shape[1] < nca.num_channels:
-            x = F.pad(
-                x, (0, 0, 0, 0, 0, nca.num_channels - x.shape[1], 0, 0), mode="constant"
+    :returns: Input tensor, BCWH, padded along the channel dimension.
+    """
+    if x.shape[1] < nca.num_channels:
+        x = F.pad(
+            x, (0, 0, 0, 0, 0, nca.num_channels - x.shape[1], 0, 0), mode="constant"
+        )
+        if noise:
+            x[
+            :,
+            nca.num_image_channels: nca.num_image_channels
+                                    + nca.num_hidden_channels,
+            :,
+            :,
+            ] = torch.normal(
+                0.5,
+                0.225,
+                size=(x.shape[0], nca.num_hidden_channels, x.shape[2], x.shape[3]),
             )
-            if noise:
-                x[
-                :,
-                nca.num_image_channels: nca.num_image_channels
-                                        + nca.num_hidden_channels,
-                :,
-                :,
-                ] = torch.normal(
-                    0.5,
-                    0.225,
-                    size=(x.shape[0], nca.num_hidden_channels, x.shape[2], x.shape[3]),
-                )
-        return x
+    return x

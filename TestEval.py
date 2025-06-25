@@ -15,7 +15,7 @@ import os.path as osp
 config_files = [
     './configs/datasets/cifar10/cifar10.yml',
     './configs/datasets/cifar10/cifar10_ood.yml',
-    './configs/networks/nca.yml',
+    './configs/networks/react_net_nca.yml',
     './configs/pipelines/test/test_ood.yml',
     './configs/preprocessors/base_preprocessor.yml',
     './configs/postprocessors/msp.yml',
@@ -63,17 +63,17 @@ for mode in modes:
         data = batch['data'].cuda()
         label = batch['label']
         with torch.no_grad():
-            logits_cls, feature = net(data, return_feature=True)
+            logits_cls = net(data, return_feature=False)
         logits_list.append(logits_cls.data.to('cpu').numpy())
-        feature_list.append(feature.data.to('cpu').numpy())
+        #feature_list.append(feature.data.to('cpu').numpy())
         label_list.append(label.numpy())
 
     logits_arr = np.concatenate(logits_list)
-    feature_arr = np.concatenate(feature_list)
+    #feature_arr = np.concatenate(feature_list)
     label_arr = np.concatenate(label_list)
 
     save_arr_to_dir(logits_arr, osp.join(save_root, 'id', f'{mode}_logits.npy'))
-    save_arr_to_dir(feature_arr, osp.join(save_root, 'id', f'{mode}_feature.npy'))
+    #save_arr_to_dir(feature_arr, osp.join(save_root, 'id', f'{mode}_feature.npy'))
     save_arr_to_dir(label_arr, osp.join(save_root, 'id', f'{mode}_labels.npy'))
 
 # save ood results
@@ -97,17 +97,17 @@ for ood_split in ood_splits:
             label = batch['label']
 
             with torch.no_grad():
-                logits_cls, feature = net(data, return_feature=True)
+                logits_cls = net(data, return_feature=False)
             logits_list.append(logits_cls.data.to('cpu').numpy())
-            feature_list.append(feature.data.to('cpu').numpy())
+            #feature_list.append(feature.data.to('cpu').numpy())
             label_list.append(label.numpy())
 
         logits_arr = np.concatenate(logits_list)
-        feature_arr = np.concatenate(feature_list)
+        #feature_arr = np.concatenate(feature_list)
         label_arr = np.concatenate(label_list)
 
         save_arr_to_dir(logits_arr, osp.join(save_root, ood_split, f'{dataset_name}_logits.npy'))
-        save_arr_to_dir(feature_arr, osp.join(save_root, ood_split, f'{dataset_name}_feature.npy'))
+        #save_arr_to_dir(feature_arr, osp.join(save_root, ood_split, f'{dataset_name}_feature.npy'))
         save_arr_to_dir(label_arr, osp.join(save_root, ood_split, f'{dataset_name}_labels.npy'))
 
 # load logits, feature, label for this benchmark
@@ -117,7 +117,7 @@ modes = ['val', 'test']
 results['id'] = dict()
 for mode in modes:
     results['id'][mode] = dict()
-    results['id'][mode]['feature'] = np.load(osp.join(save_root, 'id', f'{mode}_feature.npy'))
+    #results['id'][mode]['feature'] = np.load(osp.join(save_root, 'id', f'{mode}_feature.npy'))
     results['id'][mode]['logits'] = np.load(osp.join(save_root, 'id', f'{mode}_logits.npy'))
     results['id'][mode]['labels'] = np.load(osp.join(save_root, 'id', f'{mode}_labels.npy'))
 
@@ -128,7 +128,7 @@ for split_type in split_types:
     dataset_names = config['ood_dataset'][split_type].datasets
     for dataset_name in dataset_names:
         results[split_type][dataset_name] = dict()
-        results[split_type][dataset_name]['feature'] = np.load(osp.join(save_root, split_type, f'{dataset_name}_feature.npy'))
+        #results[split_type][dataset_name]['feature'] = np.load(osp.join(save_root, split_type, f'{dataset_name}_feature.npy'))
         results[split_type][dataset_name]['logits'] = np.load(osp.join(save_root, split_type, f'{dataset_name}_logits.npy'))
         results[split_type][dataset_name]['labels'] = np.load(osp.join(save_root, split_type, f'{dataset_name}_labels.npy'))
 
