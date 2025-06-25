@@ -35,9 +35,10 @@ net = get_network(config.network).cuda()
 # init ood evaluator
 evaluator = get_evaluator(config)
 
-
-
 def save_arr_to_dir(arr, dir):
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(dir), exist_ok=True)
+    # Save the array to the file
     with open(dir, 'wb') as f:
         np.save(f, arr)
 
