@@ -16,8 +16,12 @@ class ReactNet(nn.Module):
 
     def forward_threshold(self, x, threshold):
         if isinstance(self.backbone, BasicNCAModel):
-            self.backbone.threshold_activations_react = threshold
-            logits = self.backbone.classify(x, 72, False)
+            useFeatures = True
+            if useFeatures:
+                self.backbone.threshold_cell_states_react = threshold
+            else:
+                self.backbone.threshold_activations_react = threshold
+            logits = self.backbone.classify(x, 72)
             return logits
         else:
             _, feature = self.backbone(x, return_feature=True)

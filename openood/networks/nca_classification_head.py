@@ -15,12 +15,12 @@ class AutoStepper:
     """
 
     def __init__(
-        self,
-        min_steps: int = 10,
-        max_steps: int = 100,
-        plateau: int = 5,
-        verbose: bool = False,
-        threshold: float = 1e-2,
+            self,
+            min_steps: int = 10,
+            max_steps: int = 100,
+            plateau: int = 5,
+            verbose: bool = False,
+            threshold: float = 1e-2,
     ):
         """
         Constructor.
@@ -47,26 +47,25 @@ class BasicNCAModel(nn.Module):
     """
 
     def __init__(
-        self,
-        device: torch.device,
-        num_image_channels: int,
-        num_hidden_channels: int,
-        num_output_channels: int,
-        num_classes: int,
-        fire_rate: float = 0.5,
-        hidden_size: int = 128,
-        use_alive_mask: bool = False,
-        immutable_image_channels: bool = True,
-        num_learned_filters: int = 2,
-        dx_noise: float = 0.0,
-        filter_padding: str = "circular",
-        use_laplace: bool = False,
-        kernel_size: int = 3,
-        pad_noise: bool = False,
-        autostepper: Optional[AutoStepper] = None,
-        pixel_wise_loss: bool = False,
-        threshold_activations_react: float = None,
-        threshold_cell_states_react: float = None
+            self,
+            device: torch.device,
+            num_image_channels: int,
+            num_hidden_channels: int,
+            num_output_channels: int,
+            num_classes: int,
+            fire_rate: float = 0.5,
+            hidden_size: int = 128,
+            use_alive_mask: bool = False,
+            immutable_image_channels: bool = True,
+            num_learned_filters: int = 2,
+            dx_noise: float = 0.0,
+            filter_padding: str = "circular",
+            use_laplace: bool = False,
+            kernel_size: int = 3,
+            pad_noise: bool = False,
+            autostepper: Optional[AutoStepper] = None,
+            pixel_wise_loss: bool = False,
+            threshold_activations_react: float = None,
     ):
         """
         Constructor.
@@ -96,7 +95,7 @@ class BasicNCAModel(nn.Module):
         self.num_hidden_channels = num_hidden_channels
         self.num_output_channels = num_output_channels
         self.num_channels = (
-            num_image_channels + num_hidden_channels + num_output_channels
+                num_image_channels + num_hidden_channels + num_output_channels
         )
         self.fire_rate = fire_rate
         self.hidden_size = hidden_size
@@ -115,10 +114,8 @@ class BasicNCAModel(nn.Module):
         self.pixel_wise_loss = pixel_wise_loss
         self.validation_metric = "accuracy_micro"
 
-        #ReAct
+        # ReAct
         self.threshold_activations_react = threshold_activations_react
-        self.threshold_cell_states_react = threshold_cell_states_react
-
 
         if num_learned_filters > 0:
             self.num_filters = num_learned_filters
@@ -161,6 +158,68 @@ class BasicNCAModel(nn.Module):
 
         self.meta: dict = {}
 
+        self.classifierHead = nn.Sequential(
+            nn.Linear(
+                int(self.num_channels) * 8 * 8, 128, bias=True
+            ),
+            nn.ReLU(),
+            nn.Linear(128, self.num_classes, bias=False),
+        ).to(device)
+
+
+    def forward_head(
+            self,
+            x: torch.Tensor,
+            steps: int = 1,
+            return_steps: bool = False,
+    ) -> torch.Tensor | Tuple[torch.Tensor, int]:
+        """
+        :param x [torch.Tensor]: Input image, padded along the channel dimension, BCWH.
+        :param steps [int]: Time steps in forward pass.
+        :param return_steps [bool]: Whether to return number of steps we took.
+
+        :returns: Output image, BWHC
+        """
+        if self.autostepper is None:
+            for step in range(steps):
+                x = self._update(x)
+            max = F.adaptive_max_pool2d(x, (8, 8))
+            max = max.view(max.size(0), -1)
+            x = self.classifierHead(max)
+            x = F.log_softmax(x, dim=1)
+            if return_steps:
+                return x, steps
+            return x
+
+    def loss(self, image: torch.Tensor, label: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Return the classification loss. For pixel-wise ("self-classifying") problems,
+        such as self-classifying MNIST, we compute the Cross-Entropy loss.
+        For image-wise classification, MSE loss is returned.
+
+        :param image [torch.Tensor]: Input image, BWHC.
+        :param label [torch.Tensor]: Ground truth.
+
+        :returns: Dictionary of identifiers mapped to computed losses.
+        """
+        loss = F.cross_entropy(image, label)
+        return {
+            "total": loss,
+            "classification": loss,
+        }
+
+    def classify(self, image: torch.Tensor, steps: int = 100) -> torch.Tensor:
+        """
+        :param image [torch.Tensor]: Input image, BCWH.
+
+        :returns [torch.Tensor]: Output image, BWHC
+        """
+        x = image.clone()
+        x = pad_input(x, self, noise=self.pad_noise)
+        x = self.prepare_input(x)
+        return self.forward_head(x, steps)
+
+
     def prepare_input(self, x: torch.Tensor) -> torch.Tensor:
         """
         Preprocess input. Intended to be overwritten by subclass, if preprocessing
@@ -174,13 +233,13 @@ class BasicNCAModel(nn.Module):
 
     def __alive(self, x):
         mask = (
-            F.max_pool2d(
-                x[:, 3, :, :],
-                kernel_size=3,
-                stride=1,
-                padding=1,
-            )
-            > 0.1
+                F.max_pool2d(
+                    x[:, 3, :, :],
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+                > 0.1
         )
         return mask
 
@@ -218,7 +277,7 @@ class BasicNCAModel(nn.Module):
             feature = self.network[-3:-2](dx)
             # print(dx.shape)
             feature = feature.clip(max=self.threshold_activations_react)
-            #feature = feature.view(feature.size(0), -1)
+            # feature = feature.view(feature.size(0), -1)
             # print(feature.shape)
             dx = self.network[-2:](feature)
         else:
@@ -249,79 +308,6 @@ class BasicNCAModel(nn.Module):
             x = x.permute(1, 0, 2, 3)  # C B W H --> B C W H
         return x
 
-    def forward_intern(
-        self,
-        x: torch.Tensor,
-        steps: int = 1,
-        return_steps: bool = False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, int]:
-        """
-        :param x [torch.Tensor]: Input image, padded along the channel dimension, BCWH.
-        :param steps [int]: Time steps in forward pass.
-        :param return_steps [bool]: Whether to return number of steps we took.
-
-        :returns: Output image, BWHC
-        """
-        if self.autostepper is None:
-            for step in range(steps):
-                x = self._update(x)
-            x = x.permute((0, 2, 3, 1))  # --> BWHC
-            if return_steps:
-                return x, steps
-            return x
-
-        cooldown = 0
-        # invariant: auto_min_steps > 0, so both of these will be defined when used
-        hidden_i: torch.Tensor | None = None
-        hidden_i_1: torch.Tensor | None = None
-        for step in range(self.autostepper.max_steps):
-            with torch.no_grad():
-                if (
-                    step >= self.autostepper.min_steps
-                    and hidden_i is not None
-                    and hidden_i_1 is not None
-                ):
-                    # normalized absolute difference between two hidden states
-                    score = (hidden_i - hidden_i_1).abs().sum() / (
-                        hidden_i.shape[0]
-                        * hidden_i.shape[1]
-                        * hidden_i.shape[2]
-                        * hidden_i.shape[3]
-                    )
-                    if score >= self.autostepper.threshold:
-                        cooldown = 0
-                    else:
-                        cooldown += 1
-                    if cooldown >= self.autostepper.plateau:
-                        if self.autostepper.verbose:
-                            logging.info(f"Breaking after {step} steps.")
-                        x = x.permute((0, 2, 3, 1))  # --> BWHC
-                        if return_steps:
-                            return x, step
-                        return x
-            # save previous hidden state
-            hidden_i_1 = x[
-                :,
-                self.num_image_channels : self.num_image_channels
-                + self.num_hidden_channels,
-                :,
-                :,
-            ]
-            # single inference time step
-            x = self._update(x)
-            # set current hidden state
-            hidden_i = x[
-                :,
-                self.num_image_channels : self.num_image_channels
-                + self.num_hidden_channels,
-                :,
-                :,
-            ]
-        x = x.permute((0, 2, 3, 1))  # --> BWHC
-        if return_steps:
-            return x, self.autostepper.max_steps
-        return x
-
     def forward(self, x, return_feature=False, return_feature_list=False):
         """
         Forward Methode Compatibility OpenOOD
@@ -345,51 +331,10 @@ class BasicNCAModel(nn.Module):
 
         :returns: Dictionary of identifiers mapped to computed losses.
         """
-        # x: B W H C
-        class_channels = image[
-            ..., self.num_image_channels + self.num_hidden_channels :
-        ]
-
-        # Create one-hot ground truth tensor, where all pixels of the predicted class are
-        # active in the respective classification channel.
-        if self.pixel_wise_loss:
-            y = torch.ones((image.shape[0], image.shape[1], image.shape[2])).to(
-                self.device
-            )
-            # if binary images are classified: mask with first image channel
-            if self.num_image_channels == 1:
-                mask = image[..., 0] > 0
-            # TODO: mask alpha channel if available
-            else:
-                mask = torch.Tensor([1.0])
-            for i in range(image.shape[0]):
-                y[i] *= label[i]
-            loss_ce = (
-                F.cross_entropy(
-                    class_channels.permute(0, 3, 1, 2),  # B W H C --> B C W H
-                    y.long(),
-                    reduction="none",
-                )
-                * mask
-            ).mean()
-            loss_classification = loss_ce
-        else:
-            y_pred = F.softmax(class_channels, dim=-1)  # softmax along channel dim
-            y_pred = torch.mean(y_pred, dim=1)  # average W
-            y_pred = torch.mean(y_pred, dim=1)  # average H
-            loss_mse = (
-                F.mse_loss(
-                    y_pred.float(),
-                    F.one_hot(label.squeeze(), num_classes=self.num_classes).float(),
-                    reduction="none",
-                )
-            ).mean()
-            loss_classification = loss_mse
-
-        loss = loss_classification
+        loss = F.cross_entropy(image,label)
         return {
             "total": loss,
-            "classification": loss_classification,
+            "classification": loss,
         }
 
     def get_meta_dict(self) -> dict:
@@ -421,12 +366,12 @@ class BasicNCAModel(nn.Module):
 
     """
     def metrics(self, pred: torch.Tensor, label: torch.Tensor) -> Dict[str, float]:
-        
+
         Return dict of standard evaluation metrics.
 
         :param pred [torch.Tensor]: Predicted image.
         :param label [torch.Tensor]: Ground truth label.
-        
+
         accuracy_macro_metric = MulticlassAccuracy(
             average="macro", num_classes=self.num_classes
         )
@@ -464,55 +409,16 @@ class BasicNCAModel(nn.Module):
         )
         return meta
 
-    def classify(
-        self, image: torch.Tensor, steps: int = 100, reduce: bool = False
-    ) -> torch.Tensor:
+    def classify(self, image: torch.Tensor, steps: int = 100) -> torch.Tensor:
         """
-        Predict classification for an input image.
+        :param image [torch.Tensor]: Input image, BCWH.
 
-        :param image [torch.Tensor]: Input image.
-        :param steps [int]: Inference steps. Defaults to 100.
-        :param reduce [bool]: Return a single softmax probability. Defaults to False.
-
-        :returns [torch.Tensor]: Single class index or vector of logits.
+        :returns [torch.Tensor]: Output image, BWHC
         """
-        with torch.no_grad():
-            x = image.clone()
-            x = self.predict(x, steps=steps)
-            hidden_channels = x[
-                ...,
-                self.num_image_channels : self.num_image_channels
-                + self.num_hidden_channels,
-            ]
-
-            class_channels = x[
-                ..., self.num_image_channels + self.num_hidden_channels :
-            ]
-
-            # mask inactive pixels
-            for i in range(image.shape[0]):
-                mask = torch.max(hidden_channels[i]) > 0.1
-                class_channels[i] *= mask
-
-            # if binary classification (e.g. self classifying MNIST),
-            # mask away pixels with the binary image used as a mask
-            if self.num_image_channels == 1:
-                for i in range(image.shape[0]):
-                    mask = image[i, ..., 0]
-                    for c in range(self.num_classes):
-                        class_channels[i, :, :, c] *= mask
-
-            # Average over all pixels if a single categorial prediction is desired
-            y_pred = F.softmax(class_channels, dim=-1)
-            y_pred = torch.mean(y_pred, dim=1)
-            y_pred = torch.mean(y_pred, dim=1)
-
-            # If reduce enabled, reduce to a single scalar.
-            # Otherwise, return logits of all channels as a vector.
-            if reduce:
-                y_pred = torch.argmax(y_pred, dim=-1)
-                return y_pred
-            return y_pred
+        x = image.clone()
+        x = pad_input(x, self, noise=self.pad_noise)
+        x = self.prepare_input(x)
+        return self.forward_head(x, steps)
 
     def predict(self, image: torch.Tensor, steps: int = 100) -> torch.Tensor:
         """
@@ -527,11 +433,11 @@ class BasicNCAModel(nn.Module):
             x = image.clone()
             x = pad_input(x, self, noise=self.pad_noise)
             x = self.prepare_input(x)
-            x = self.forward_intern(x, steps=steps)  # type: ignore[assignment]
+            x = self.forward_head(x, steps=steps)  # type: ignore[assignment]
             return x
 
     def validate(
-        self, image: torch.Tensor, label: torch.Tensor, steps: int
+            self, image: torch.Tensor, label: torch.Tensor, steps: int
     ) -> Tuple[Dict[str, float], torch.Tensor]:
         """
         :param image [torch.Tensor]: Input image, BCWH
@@ -543,6 +449,7 @@ class BasicNCAModel(nn.Module):
         pred = self.classify(image.to(self.device), steps=steps)
         metrics = self.metrics(pred, label.to(self.device))
         return metrics, pred
+
 
 def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
     """
@@ -562,11 +469,11 @@ def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torc
         )
         if noise:
             x[
-            :,
-            nca.num_image_channels: nca.num_image_channels
-                                    + nca.num_hidden_channels,
-            :,
-            :,
+                :,
+                nca.num_image_channels: nca.num_image_channels
+                                        + nca.num_hidden_channels,
+                :,
+                :,
             ] = torch.normal(
                 0.5,
                 0.225,
