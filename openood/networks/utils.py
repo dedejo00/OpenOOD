@@ -39,6 +39,7 @@ from .rts_net import RTSNet
 from .palm_net import PALMNet
 from .ascood_net import ASCOODNet
 from .nca import BasicNCAModel
+from .nca_classification_head import NCA_WITH_HEAD
 
 
 def get_network(network_config):
@@ -378,6 +379,18 @@ def get_network(network_config):
         fire_rate=0.5,
         filter_padding="circular",
         pad_noise=True)
+    elif network_config.name == 'nca_head':
+        net = NCA_WITH_HEAD(
+        device=network_config.device,
+        num_output_channels=10,
+        num_image_channels=3,
+        num_hidden_channels=20,
+        num_classes=10,
+        use_alive_mask=False,
+        fire_rate=0.5,
+        filter_padding="circular",
+        pad_noise=True
+        )
     else:
         raise Exception('Unexpected Network Architecture!')
     print(network_config)

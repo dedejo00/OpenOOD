@@ -41,7 +41,7 @@ class AutoStepper:
         self.threshold = threshold
 
 
-class BasicNCAModel(nn.Module):
+class NCA_WITH_HEAD(nn.Module):
     """
     Abstract base class for NCA models.
     """
@@ -86,7 +86,7 @@ class BasicNCAModel(nn.Module):
         :param pad_noise [bool]: Whether to pad input image tensor with noise in hidden / output channels
         :param autostepper [Optional[AutoStepper]]: AutoStepper object to select number of time steps based on activity
         """
-        super(BasicNCAModel, self).__init__()
+        super(NCA_WITH_HEAD, self).__init__()
 
         self.device = device
         self.to(device)
@@ -318,7 +318,7 @@ class BasicNCAModel(nn.Module):
 
         Returns:
         """
-        return self.classify(x, 72, reduce=False)
+        return self.classify(x, 72)
 
     def loss(self, image: torch.Tensor, label: torch.Tensor) -> Dict[str, torch.Tensor]:
         """

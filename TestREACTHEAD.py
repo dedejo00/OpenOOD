@@ -16,7 +16,7 @@ import os.path as osp
 config_files = [
     './configs/datasets/cifar10/cifar10.yml',
     './configs/datasets/cifar10/cifar10_ood.yml',
-    './configs/networks/react_net_nca.yml',
+    './configs/networks/react_nca_head.yml',
     './configs/pipelines/test/test_ood.yml',
     './configs/preprocessors/base_preprocessor.yml',
     './configs/postprocessors/msp.yml',
@@ -99,7 +99,7 @@ for ood_split in ood_splits:
             label = batch['label']
 
             with torch.no_grad():
-                logits_cls = net.forward_threshold(data, threshold=0.062438145)
+                logits_cls = net.forward_threshold(data, threshold=11.052795)
             logits_list.append(logits_cls.data.to('cpu').numpy())
             #feature_list.append(feature.data.to('cpu').numpy())
             label_list.append(label.numpy())
@@ -164,7 +164,6 @@ from openood.evaluators.metrics import compute_all_metrics, acc
 def eval_id(postprocess_results):
     for mode_res in postprocess_results['id']:
         print(postprocess_results['id'][mode_res])
-
         accuracy = acc(postprocess_results['id'][mode_res][0], postprocess_results['id'][mode_res][2])
         print("ID Accuracy: {:.2f}".format(accuracy * 100), flush=True)
 
@@ -205,6 +204,8 @@ def print_all_metrics(metrics):
     print(u'\u2500' * 70, flush=True)
 
 
+
+
 def eval_ood(postprocess_results):
     [id_pred, id_conf, id_gt] = postprocess_results['id']['test']
     split_types = ['nearood', 'farood']
@@ -231,3 +232,43 @@ def eval_ood(postprocess_results):
         print_all_metrics(metrics_mean)
 
 eval_ood(postprocess_results)
+
+
+"""
+ID Accuracy: 12.52
+Performing evaluation on nearood datasets...
+Computing metrics on cifar100 dataset...
+FPR@95: 100.00, AUROC: 46.65 AUPR_IN: 52.12, AUPR_OUT: 47.63
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing metrics on tin dataset...
+FPR@95: 100.00, AUROC: 44.68 AUPR_IN: 54.12, AUPR_OUT: 43.05
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing mean metrics...
+FPR@95: 100.00, AUROC: 45.67 AUPR_IN: 53.12, AUPR_OUT: 45.34
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Performing evaluation on farood datasets...
+Computing metrics on mnist dataset...
+FPR@95: 100.00, AUROC: 10.58 AUPR_IN: 14.52, AUPR_OUT: 60.07
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing metrics on svhn dataset...
+FPR@95: 100.00, AUROC: 45.63 AUPR_IN: 29.89, AUPR_OUT: 72.19
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing metrics on texture dataset...
+FPR@95: 100.00, AUROC: 49.33 AUPR_IN: 63.69, AUPR_OUT: 39.48
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing metrics on place365 dataset...
+FPR@95: 100.00, AUROC: 45.60 AUPR_IN: 25.41, AUPR_OUT: 77.69
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+Computing mean metrics...
+FPR@95: 100.00, AUROC: 37.78 AUPR_IN: 33.38, AUPR_OUT: 62.36
+ACC: 12.52
+──────────────────────────────────────────────────────────────────────
+
+"""

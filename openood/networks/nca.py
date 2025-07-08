@@ -265,6 +265,8 @@ class BasicNCAModel(nn.Module):
         if self.autostepper is None:
             for step in range(steps):
                 x = self._update(x)
+                if self.threshold_cell_states_react and step == 65:
+                    x = x.clip(max=self.threshold_cell_states_react)
             x = x.permute((0, 2, 3, 1))  # --> BWHC
             if return_steps:
                 return x, steps
@@ -309,6 +311,8 @@ class BasicNCAModel(nn.Module):
             ]
             # single inference time step
             x = self._update(x)
+            if self.threshold_cell_states_react and step == 65:
+                x = x.clip(max=self.threshold_cell_states_react)
             # set current hidden state
             hidden_i = x[
                 :,

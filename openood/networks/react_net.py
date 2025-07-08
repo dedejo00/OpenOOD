@@ -1,6 +1,7 @@
 import torch.nn as nn
 from openood.networks.de_resnet18_256x256 import De_ResNet18_256x256
 from openood.networks.nca import BasicNCAModel
+from openood.networks.nca_classification_head import NCA_WITH_HEAD
 
 
 class ReactNet(nn.Module):
@@ -16,11 +17,14 @@ class ReactNet(nn.Module):
 
     def forward_threshold(self, x, threshold):
         if isinstance(self.backbone, BasicNCAModel):
-            useFeatures = True
+            useFeatures = False
             if useFeatures:
                 self.backbone.threshold_cell_states_react = threshold
             else:
                 self.backbone.threshold_activations_react = threshold
+            logits = self.backbone.classify(x, 72)
+            return logits
+        elif isinstance(self.backbone, NCA_WITH_HEAD):
             logits = self.backbone.classify(x, 72)
             return logits
         else:
