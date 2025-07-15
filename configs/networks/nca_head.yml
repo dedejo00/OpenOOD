@@ -2,5 +2,6 @@ network:
   name: nca_head
   num_classes: '@{dataset.num_classes}'
   pretrained: True          # set 'True' to load pretrained model
+  num_hidden_channels: 30
   checkpoint: ./results/class_cifar10_head_nca.best.pth            # ignore if pretrained is false
   num_gpus: '@{num_gpus}'

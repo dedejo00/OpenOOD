@@ -180,16 +180,28 @@ class NCA_WITH_HEAD(nn.Module):
 
         :returns: Output image, BWHC
         """
-        if self.autostepper is None:
-            for step in range(steps):
-                x = self._update(x)
-            max = F.adaptive_max_pool2d(x, (8, 8))
-            max = max.view(max.size(0), -1)
+        for step in range(steps):
+            x = self._update(x, step)
+        x = x.permute(0, 2, 3, 1)
+        class_channels = x[
+            ..., self.num_image_channels + self.num_hidden_channels:
+        ]
+        class_channels = class_channels.permute(0, 3, 1, 2)
+        max = F.adaptive_max_pool2d(class_channels, (8, 8))
+        max = max.view(max.size(0), -1)
+
+        if self.threshold_activations_react:
+            feature = self.classifierHead[-3:-2](max)
+            feature = feature.clip(max=self.threshold_activations_react)
+            x = self.classifierHead[-2:](feature)
+        else:
             x = self.classifierHead(max)
-            x = F.log_softmax(x, dim=1)
-            if return_steps:
-                return x, steps
-            return x
+
+
+        x = F.log_softmax(x, dim=1)
+        if return_steps:
+            return x, steps
+        return x
 
     def loss(self, image: torch.Tensor, label: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
@@ -261,7 +273,7 @@ class NCA_WITH_HEAD(nn.Module):
         y = torch.cat(perception, 1)
         return y
 
-    def _update(self, x: torch.Tensor):
+    def _update(self, x: torch.Tensor, step: int) -> torch.Tensor:
         """
         :param x [torch.Tensor]: Input tensor, BCWH
         """
@@ -273,15 +285,13 @@ class NCA_WITH_HEAD(nn.Module):
         # Compute delta from FFNN network
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
 
-        if self.threshold_activations_react:
-            feature = self.network[-3:-2](dx)
-            # print(dx.shape)
-            feature = feature.clip(max=self.threshold_activations_react)
-            # feature = feature.view(feature.size(0), -1)
-            # print(feature.shape)
-            dx = self.network[-2:](feature)
-        else:
-            dx = self.network(dx)
+
+        int_tensor = torch.tensor(float(step))
+        # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
+        int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
+            self.device)
+        dx = torch.cat([dx, int_tensor_expanded], dim=3)
+        dx = self.network(dx)
 
         # Stochastic weight update
         fire_rate = self.fire_rate

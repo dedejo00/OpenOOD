@@ -66,7 +66,7 @@ class BasicNCAModel(nn.Module):
         autostepper: Optional[AutoStepper] = None,
         pixel_wise_loss: bool = False,
         threshold_activations_react: float = None,
-        threshold_cell_states_react: float = None
+        threshold_cell_states_react: float = None,
     ):
         """
         Constructor.
@@ -202,7 +202,7 @@ class BasicNCAModel(nn.Module):
         y = torch.cat(perception, 1)
         return y
 
-    def _update(self, x: torch.Tensor):
+    def _update(self, x: torch.Tensor, step):
         """
         :param x [torch.Tensor]: Input tensor, BCWH
         """
@@ -215,6 +215,11 @@ class BasicNCAModel(nn.Module):
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
 
         if self.threshold_activations_react:
+            int_tensor = torch.tensor(float(step))
+            # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
+            int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
+                self.device)
+            dx = torch.cat([dx, int_tensor_expanded], dim=3)
             feature = self.network[-3:-2](dx)
             # print(dx.shape)
             feature = feature.clip(max=self.threshold_activations_react)
@@ -222,6 +227,11 @@ class BasicNCAModel(nn.Module):
             # print(feature.shape)
             dx = self.network[-2:](feature)
         else:
+            int_tensor = torch.tensor(float(step))
+            # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
+            int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
+                self.device)
+            dx = torch.cat([dx, int_tensor_expanded], dim=3)
             dx = self.network(dx)
 
         # Stochastic weight update
@@ -264,8 +274,8 @@ class BasicNCAModel(nn.Module):
         """
         if self.autostepper is None:
             for step in range(steps):
-                x = self._update(x)
-                if self.threshold_cell_states_react and step == 65:
+                x = self._update(x, step)
+                if self.threshold_cell_states_react and step == int(steps*0.9):
                     x = x.clip(max=self.threshold_cell_states_react)
             x = x.permute((0, 2, 3, 1))  # --> BWHC
             if return_steps:
@@ -310,8 +320,8 @@ class BasicNCAModel(nn.Module):
                 :,
             ]
             # single inference time step
-            x = self._update(x)
-            if self.threshold_cell_states_react and step == 65:
+            x = self._update(x, step)
+            if self.threshold_cell_states_react and step == int(steps*0.9):
                 x = x.clip(max=self.threshold_cell_states_react)
             # set current hidden state
             hidden_i = x[

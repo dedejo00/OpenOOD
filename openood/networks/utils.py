@@ -384,10 +384,10 @@ def get_network(network_config):
         device=network_config.device,
         num_output_channels=10,
         num_image_channels=3,
-        num_hidden_channels=20,
+        num_hidden_channels=network_config.num_hidden_channels,
         num_classes=10,
         use_alive_mask=False,
-        fire_rate=0.5,
+        fire_rate=0.8,
         filter_padding="circular",
         pad_noise=True
         )
