@@ -16,7 +16,7 @@ import os.path as osp
 config_files = [
     './configs/datasets/cifar10/cifar10.yml',
     './configs/datasets/cifar10/cifar10_ood.yml',
-    './configs/networks/react_nca_head.yml',
+    './configs/networks/nca_head.yml',
     './configs/pipelines/test/test_ood.yml',
     './configs/preprocessors/base_preprocessor.yml',
     './configs/postprocessors/msp.yml',
@@ -65,7 +65,7 @@ for mode in modes:
         data = batch['data'].to(config.device)
         label = batch['label']
         with torch.no_grad():
-            logits_cls = net.forward_threshold(data, threshold=-10.886123)
+            logits_cls = net.forward(data)
         logits_list.append(logits_cls.data.to('cpu').numpy())
         #feature_list.append(feature.data.to('cpu').numpy())
         label_list.append(label.numpy())
@@ -99,7 +99,7 @@ for ood_split in ood_splits:
             label = batch['label']
 
             with torch.no_grad():
-                logits_cls = net.forward_threshold(data, threshold=-10.886123)
+                logits_cls = net.forward(data)
             logits_list.append(logits_cls.data.to('cpu').numpy())
             #feature_list.append(feature.data.to('cpu').numpy())
             label_list.append(label.numpy())
@@ -234,81 +234,41 @@ def eval_ood(postprocess_results):
 eval_ood(postprocess_results)
 
 
-""" threshold=0.672239 percentile 90
-ID Accuracy: 61.19
-Performing evaluation on nearood datasets...
-Computing metrics on cifar100 dataset...
-FPR@95: 81.39, AUROC: 63.35 AUPR_IN: 65.48, AUPR_OUT: 59.66
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing metrics on tin dataset...
-FPR@95: 76.88, AUROC: 66.94 AUPR_IN: 72.36, AUPR_OUT: 59.46
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing mean metrics...
-FPR@95: 79.13, AUROC: 65.14 AUPR_IN: 68.92, AUPR_OUT: 59.56
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Performing evaluation on farood datasets...
-Computing metrics on mnist dataset...
-FPR@95: 78.86, AUROC: 57.89 AUPR_IN: 27.12, AUPR_OUT: 89.92
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing metrics on svhn dataset...
-FPR@95: 64.91, AUROC: 70.33 AUPR_IN: 57.82, AUPR_OUT: 83.43
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing metrics on texture dataset...
-FPR@95: 83.99, AUROC: 63.32 AUPR_IN: 73.37, AUPR_OUT: 48.29
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing metrics on place365 dataset...
-FPR@95: 83.13, AUROC: 63.36 AUPR_IN: 34.12, AUPR_OUT: 85.50
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-Computing mean metrics...
-FPR@95: 77.72, AUROC: 63.73 AUPR_IN: 48.10, AUPR_OUT: 76.78
-ACC: 61.19
-──────────────────────────────────────────────────────────────────────
-
 """
-
-
-""" threshold=-1.886123 percentile 50
-ID Accuracy: 61.46
+ID Accuracy: 60.87
 Performing evaluation on nearood datasets...
 Computing metrics on cifar100 dataset...
-FPR@95: 81.69, AUROC: 63.12 AUPR_IN: 65.33, AUPR_OUT: 59.29
-ACC: 61.46
+FPR@95: 82.01, AUROC: 63.54 AUPR_IN: 65.55, AUPR_OUT: 59.67
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing metrics on tin dataset...
-FPR@95: 76.87, AUROC: 66.72 AUPR_IN: 72.28, AUPR_OUT: 59.00
-ACC: 61.46
+FPR@95: 77.50, AUROC: 66.87 AUPR_IN: 72.32, AUPR_OUT: 59.43
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing mean metrics...
-FPR@95: 79.28, AUROC: 64.92 AUPR_IN: 68.80, AUPR_OUT: 59.14
-ACC: 61.46
+FPR@95: 79.76, AUROC: 65.20 AUPR_IN: 68.94, AUPR_OUT: 59.55
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Performing evaluation on farood datasets...
 Computing metrics on mnist dataset...
-FPR@95: 78.96, AUROC: 57.80 AUPR_IN: 27.04, AUPR_OUT: 89.82
-ACC: 61.46
+FPR@95: 79.06, AUROC: 57.95 AUPR_IN: 27.05, AUPR_OUT: 89.92
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing metrics on svhn dataset...
-FPR@95: 64.68, AUROC: 70.25 AUPR_IN: 57.77, AUPR_OUT: 83.27
-ACC: 61.46
+FPR@95: 64.68, AUROC: 70.46 AUPR_IN: 57.95, AUPR_OUT: 83.48
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing metrics on texture dataset...
-FPR@95: 84.20, AUROC: 63.18 AUPR_IN: 73.40, AUPR_OUT: 47.61
-ACC: 61.46
+FPR@95: 83.83, AUROC: 63.45 AUPR_IN: 73.53, AUPR_OUT: 48.12
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing metrics on place365 dataset...
-FPR@95: 82.76, AUROC: 63.33 AUPR_IN: 34.17, AUPR_OUT: 85.43
-ACC: 61.46
+FPR@95: 82.73, AUROC: 63.44 AUPR_IN: 34.15, AUPR_OUT: 85.55
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 Computing mean metrics...
-FPR@95: 77.65, AUROC: 63.64 AUPR_IN: 48.10, AUPR_OUT: 76.53
-ACC: 61.46
+FPR@95: 77.58, AUROC: 63.83 AUPR_IN: 48.17, AUPR_OUT: 76.76
+ACC: 60.87
 ──────────────────────────────────────────────────────────────────────
 
 """

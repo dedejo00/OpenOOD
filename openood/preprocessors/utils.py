@@ -1,4 +1,5 @@
 from openood.utils import Config
+from . import NoNormPreProcessor
 
 from .base_preprocessor import BasePreprocessor
 from .cider_preprocessor import CiderPreprocessor
@@ -16,6 +17,7 @@ from .palm_preprocessor import PALMPreprocessor
 def get_preprocessor(config: Config, split):
     train_preprocessors = {
         'base': BasePreprocessor,
+        'no_norm': NoNormPreProcessor,
         'draem': DRAEMPreprocessor,
         'cutpaste': CutPastePreprocessor,
         'augmix': AugMixPreprocessor,
@@ -28,6 +30,7 @@ def get_preprocessor(config: Config, split):
     }
     test_preprocessors = {
         'base': TestStandardPreProcessor,
+        'no_norm': NoNormPreProcessor,
         'draem': DRAEMPreprocessor,
         'cutpaste': CutPastePreprocessor,
     }

@@ -11,8 +11,9 @@ network:
   backbone:
     name: nca_head
     num_classes: '@{dataset.num_classes}'
-    num_hidden_channels: 30,
-    pretrained: True,
+    num_hidden_channels: 30
+    pretrained: True
+    steps: 60
     device: "cuda:0"
-    checkpoint: 'results/class_cifar10_head_nca.best.pth'
+    checkpoint: 'results/Model with HeadTrue_c.hidden_30_gc_False_noise_True_AM_False_steps_60class_cifar10.best.pth'
     num_gpus: '@{num_gpus}'

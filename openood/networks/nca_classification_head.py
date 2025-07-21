@@ -53,7 +53,7 @@ class NCA_WITH_HEAD(nn.Module):
             num_hidden_channels: int,
             num_output_channels: int,
             num_classes: int,
-            fire_rate: float = 0.5,
+            fire_rate: float = 0.8,
             hidden_size: int = 128,
             use_alive_mask: bool = False,
             immutable_image_channels: bool = True,
@@ -62,10 +62,11 @@ class NCA_WITH_HEAD(nn.Module):
             filter_padding: str = "circular",
             use_laplace: bool = False,
             kernel_size: int = 3,
-            pad_noise: bool = False,
+            pad_noise: bool = True,
             autostepper: Optional[AutoStepper] = None,
             pixel_wise_loss: bool = False,
             threshold_activations_react: float = None,
+            steps: int = 60
     ):
         """
         Constructor.
@@ -117,6 +118,8 @@ class NCA_WITH_HEAD(nn.Module):
         # ReAct
         self.threshold_activations_react = threshold_activations_react
 
+        self.steps = steps
+
         if num_learned_filters > 0:
             self.num_filters = num_learned_filters
             filters = []
@@ -146,7 +149,7 @@ class NCA_WITH_HEAD(nn.Module):
 
         self.network = nn.Sequential(
             nn.Linear(
-                self.num_channels * (self.num_filters + 1), self.hidden_size, bias=True
+                self.num_channels * (self.num_filters + 1) + 1, self.hidden_size, bias=True
             ),
             nn.ReLU(),
             nn.Linear(self.hidden_size, self.num_channels, bias=False),
@@ -160,7 +163,7 @@ class NCA_WITH_HEAD(nn.Module):
 
         self.classifierHead = nn.Sequential(
             nn.Linear(
-                int(self.num_channels) * 8 * 8, 128, bias=True
+                int(self.num_classes) * 8 * 8, 128, bias=True
             ),
             nn.ReLU(),
             nn.Linear(128, self.num_classes, bias=False),
@@ -328,7 +331,7 @@ class NCA_WITH_HEAD(nn.Module):
 
         Returns:
         """
-        return self.classify(x, 72)
+        return self.classify(x, self.steps)
 
     def loss(self, image: torch.Tensor, label: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
@@ -373,41 +376,6 @@ class NCA_WITH_HEAD(nn.Module):
                 filter.requires_grad_ = False
         for layer in self.network[:-1]:
             layer.requires_grad_ = False
-
-    """
-    def metrics(self, pred: torch.Tensor, label: torch.Tensor) -> Dict[str, float]:
-
-        Return dict of standard evaluation metrics.
-
-        :param pred [torch.Tensor]: Predicted image.
-        :param label [torch.Tensor]: Ground truth label.
-
-        accuracy_macro_metric = MulticlassAccuracy(
-            average="macro", num_classes=self.num_classes
-        )
-        accuracy_micro_metric = MulticlassAccuracy(
-            average="micro", num_classes=self.num_classes
-        )
-        auroc_metric = MulticlassAUROC(num_classes=self.num_classes)
-        f1_metric = MulticlassF1Score(num_classes=self.num_classes)
-
-        y_prob = pred[..., -self.num_output_channels :]
-        y_true = label.squeeze()
-        accuracy_macro_metric.update(y_prob, y_true)
-        accuracy_micro_metric.update(y_prob, y_true)
-        auroc_metric.update(y_prob, y_true)
-        f1_metric.update(y_prob, y_true)
-
-        accuracy_macro = accuracy_macro_metric.compute().item()
-        accuracy_micro = accuracy_micro_metric.compute().item()
-        auroc = auroc_metric.compute().item()
-        f1 = f1_metric.compute().item()
-        return {
-            "accuracy_macro": accuracy_macro,
-            "accuracy_micro": accuracy_micro,
-            "f1": f1,
-            "auroc": auroc,
-        }"""
 
     def get_meta_dict(self) -> dict:
         meta = super().get_meta_dict()

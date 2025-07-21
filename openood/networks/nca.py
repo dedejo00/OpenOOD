@@ -149,7 +149,7 @@ class BasicNCAModel(nn.Module):
 
         self.network = nn.Sequential(
             nn.Linear(
-                self.num_channels * (self.num_filters + 1), self.hidden_size, bias=True
+                self.num_channels * (self.num_filters + 1) + 1, self.hidden_size, bias=True
             ),
             nn.ReLU(),
             nn.Linear(self.hidden_size, self.num_channels, bias=False),

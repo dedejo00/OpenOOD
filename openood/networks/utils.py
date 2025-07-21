@@ -376,7 +376,8 @@ def get_network(network_config):
         num_hidden_channels=20,
         num_classes=10,
         use_alive_mask=False,
-        fire_rate=0.5,
+        fire_rate=0.8,
+        num_learned_filters=0,
         filter_padding="circular",
         pad_noise=True)
     elif network_config.name == 'nca_head':
@@ -384,13 +385,15 @@ def get_network(network_config):
         device=network_config.device,
         num_output_channels=10,
         num_image_channels=3,
-        num_hidden_channels=network_config.num_hidden_channels,
+        num_hidden_channels=int(network_config.num_hidden_channels),
         num_classes=10,
+        num_learned_filters=0,
         use_alive_mask=False,
         fire_rate=0.8,
         filter_padding="circular",
-        pad_noise=True
-        )
+        pad_noise=True,
+        steps=int(network_config.steps),
+        ).to(network_config.device)
     else:
         raise Exception('Unexpected Network Architecture!')
     print(network_config)
@@ -424,9 +427,9 @@ def get_network(network_config):
             try:
                 print(network_config.name)
                 print(network_config.checkpoint)
-                torch.load(network_config.checkpoint)
+                checkpoint = torch.load(network_config.checkpoint, map_location='cuda:0')
                 print(net)
-                net.load_state_dict(torch.load(network_config.checkpoint),
+                net.load_state_dict(checkpoint,
                                     strict=False)
             except RuntimeError:
                 # sometimes fc should not be loaded

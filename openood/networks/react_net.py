@@ -22,10 +22,10 @@ class ReactNet(nn.Module):
                 self.backbone.threshold_cell_states_react = threshold
             else:
                 self.backbone.threshold_activations_react = threshold
-            logits = self.backbone.classify(x, 72)
+            logits = self.backbone.classify(x, self.backbone.steps)
             return logits
         elif isinstance(self.backbone, NCA_WITH_HEAD):
-            logits = self.backbone.classify(x, 72)
+            logits = self.backbone.classify(x, self.backbone.steps)
             return logits
         else:
             _, feature = self.backbone(x, return_feature=True)
