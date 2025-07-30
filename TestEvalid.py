@@ -44,7 +44,7 @@ def eval_selfclass_pathmnist(
     device = torch.device("cuda:%d" % gpu_index if gpu_index >= 0 else "cpu")
 
 
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False,
+    testset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                            download=True, transform=T)
     loader_test = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
@@ -60,14 +60,14 @@ def eval_selfclass_pathmnist(
         use_alive_mask=False,
         fire_rate=0.8,
         filter_padding="circular",
-        pad_noise=False,
+        pad_noise=True,
     )
     nca.load_state_dict(
-        torch.load("results/" + "Model with HeadTrue_c.hidden_30_gc_False_noise_True_AM_False_steps_60class_cifar10.best.pth",
+        torch.load("results/" + "Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best.pth",
                    weights_only=True,
                    map_location=device)
     )
-
+    print(nca)
     model_parameters = filter(lambda p: p.requires_grad, nca.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print(f"Trainable parameters: {params}")
@@ -83,13 +83,12 @@ def eval_selfclass_pathmnist(
         x = pad_input(x, nca, noise=True)
         x = x.float().to(device)
         #x = x.float().permute(0, 2, 3, 1).to(device)
-        steps = 60
+        steps = 20
         y_prob = nca.classify(x, steps)
 
         y = y.squeeze()
         pred.extend(torch.argmax(y_prob, dim=1).detach().cpu().numpy().tolist())
         gt.extend(y.cpu().numpy().tolist())
-    print(pred, gt)
     #pred = torch.tensor(pred, device=device)
     #gt = torch.tensor(gt, device=device)
     pred = np.array(pred)
@@ -144,4 +143,4 @@ def main(hidden_channels, gpu: bool, gpu_index: int, batch_size: int):
 
 
 if __name__ == "__main__":
-    main(30, True, 0, 64)
+    main(50, True, 0, 64)

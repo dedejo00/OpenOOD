@@ -1,9 +1,8 @@
 from openood.utils import config
 from openood.datasets import get_dataloader, get_ood_dataloader
 from openood.evaluators import get_evaluator
+
 from openood.networks import get_network
-
-
 from tqdm import tqdm
 import numpy as np
 import torch

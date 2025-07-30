@@ -57,7 +57,7 @@ class NCA_WITH_HEAD(nn.Module):
             hidden_size: int = 128,
             use_alive_mask: bool = False,
             immutable_image_channels: bool = True,
-            num_learned_filters: int = 2,
+            num_learned_filters: int = 0,
             dx_noise: float = 0.0,
             filter_padding: str = "circular",
             use_laplace: bool = False,
@@ -66,7 +66,8 @@ class NCA_WITH_HEAD(nn.Module):
             autostepper: Optional[AutoStepper] = None,
             pixel_wise_loss: bool = False,
             threshold_activations_react: float = None,
-            steps: int = 60
+            steps: int = 20,
+            use_temporal_encoding: bool = True
     ):
         """
         Constructor.
@@ -114,6 +115,7 @@ class NCA_WITH_HEAD(nn.Module):
         self.num_classes = num_classes
         self.pixel_wise_loss = pixel_wise_loss
         self.validation_metric = "accuracy_micro"
+        self.use_temporal_encoding = use_temporal_encoding
 
         # ReAct
         self.threshold_activations_react = threshold_activations_react
@@ -147,11 +149,18 @@ class NCA_WITH_HEAD(nn.Module):
                 self.filters.append(laplace)
             self.num_filters = len(self.filters)
 
+        input_vector_size = self.num_channels * (self.num_filters + 1)
+        if self.use_temporal_encoding:
+            input_vector_size += 1
         self.network = nn.Sequential(
             nn.Linear(
-                self.num_channels * (self.num_filters + 1) + 1, self.hidden_size, bias=True
+                input_vector_size,
+                self.hidden_size * 2,
+                bias=True,
             ),
-            nn.ReLU(),
+            nn.LeakyReLU(),
+            nn.Linear(self.hidden_size * 2, self.hidden_size, bias=False),
+            nn.LeakyReLU(),
             nn.Linear(self.hidden_size, self.num_channels, bias=False),
         ).to(device)
 
@@ -161,11 +170,20 @@ class NCA_WITH_HEAD(nn.Module):
 
         self.meta: dict = {}
 
+        alpha = torch.tensor([1.0, 1.0, 1.0, 5.0, 1.0, 5.0, 1.0, 1.0, 1.0, 1.0]).to(device)  # Emphasize classes cat and dog
+        gamma = 2.5
+        self.focal_loss = FocalLoss(alpha, gamma)
+
+        pool_size = 8
         self.classifierHead = nn.Sequential(
             nn.Linear(
-                int(self.num_classes) * 8 * 8, 128, bias=True
+                int(self.num_classes) * pool_size* pool_size, 256, bias=True
             ),
-            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(),
+            nn.Linear(256, 128, bias=True),
+            nn.Dropout(p=0.7),
+            nn.LeakyReLU(),
             nn.Linear(128, self.num_classes, bias=False),
         ).to(device)
 
@@ -190,13 +208,14 @@ class NCA_WITH_HEAD(nn.Module):
             ..., self.num_image_channels + self.num_hidden_channels:
         ]
         class_channels = class_channels.permute(0, 3, 1, 2)
-        max = F.adaptive_max_pool2d(class_channels, (8, 8))
+        max = F.adaptive_avg_pool2d(class_channels, (8, 8))
         max = max.view(max.size(0), -1)
 
         if self.threshold_activations_react:
-            feature = self.classifierHead[-3:-2](max)
-            feature = feature.clip(max=self.threshold_activations_react)
-            x = self.classifierHead[-2:](feature)
+            x = self.classifierHead(max)
+            #feature = self.classifierHead[0:3](max)
+            #feature = feature.clip(max=self.threshold_activations_react)
+            #x = self.classifierHead[3:6](feature)
         else:
             x = self.classifierHead(max)
 
@@ -258,7 +277,7 @@ class NCA_WITH_HEAD(nn.Module):
         )
         return mask
 
-    def _perceive(self, x):
+    def _perceive(self, x, step):
         def _perceive_with(x, weight):
             if isinstance(weight, nn.Conv2d):
                 return weight(x)
@@ -273,9 +292,14 @@ class NCA_WITH_HEAD(nn.Module):
 
         perception = [x]
         perception.extend([_perceive_with(x, w) for w in self.filters])
+        if self.use_temporal_encoding:
+            perception.append(
+                torch.mul(
+                    torch.ones((x.shape[0], 1, x.shape[2], x.shape[3])), step / 100
+                ).to(self.device)
+            )
         y = torch.cat(perception, 1)
         return y
-
     def _update(self, x: torch.Tensor, step: int) -> torch.Tensor:
         """
         :param x [torch.Tensor]: Input tensor, BCWH
@@ -283,17 +307,10 @@ class NCA_WITH_HEAD(nn.Module):
         assert x.shape[1] == self.num_channels
 
         # Perception
-        dx = self._perceive(x)
+        dx = self._perceive(x, step)
 
         # Compute delta from FFNN network
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
-
-
-        int_tensor = torch.tensor(float(step))
-        # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
-        int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
-            self.device)
-        dx = torch.cat([dx, int_tensor_expanded], dim=3)
         dx = self.network(dx)
 
         # Stochastic weight update
@@ -350,43 +367,6 @@ class NCA_WITH_HEAD(nn.Module):
             "classification": loss,
         }
 
-    def get_meta_dict(self) -> dict:
-        return dict(
-            device=str(self.device),
-            num_image_channels=self.num_image_channels,
-            num_hidden_channels=self.num_hidden_channels,
-            num_output_channels=self.num_output_channels,
-            fire_rate=self.fire_rate,
-            hidden_size=self.hidden_size,
-            use_alive_mask=self.use_alive_mask,
-            immutable_image_channels=self.immutable_image_channels,
-            num_learned_filters=self.num_learned_filters,
-            dx_noise=self.dx_noise,
-            **self.meta,
-        )
-
-    def finetune(self):
-        """
-        Prepare model for fine tuning by freezing everything except the final layer,
-        and setting to "train" mode.
-        """
-        self.train()
-        if self.num_learned_filters != 0:
-            for filter in self.filters:
-                filter.requires_grad_ = False
-        for layer in self.network[:-1]:
-            layer.requires_grad_ = False
-
-    def get_meta_dict(self) -> dict:
-        meta = super().get_meta_dict()
-        meta.update(
-            dict(
-                num_classes=self.num_classes,
-                pixel_wise_loss=self.pixel_wise_loss,
-            )
-        )
-        return meta
-
     def classify(self, image: torch.Tensor, steps: int = 100) -> torch.Tensor:
         """
         :param image [torch.Tensor]: Input image, BCWH.
@@ -414,19 +394,6 @@ class NCA_WITH_HEAD(nn.Module):
             x = self.forward_head(x, steps=steps)  # type: ignore[assignment]
             return x
 
-    def validate(
-            self, image: torch.Tensor, label: torch.Tensor, steps: int
-    ) -> Tuple[Dict[str, float], torch.Tensor]:
-        """
-        :param image [torch.Tensor]: Input image, BCWH
-        :param label [torch.Tensor]: Ground truth label
-        :param steps [int]: Inference steps
-
-        :returns [Tuple[float, torch.Tensor]]: Validation metric, predicted image BWHC
-        """
-        pred = self.classify(image.to(self.device), steps=steps)
-        metrics = self.metrics(pred, label.to(self.device))
-        return metrics, pred
 
 
 def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
@@ -458,3 +425,89 @@ def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torc
                 size=(x.shape[0], nca.num_hidden_channels, x.shape[2], x.shape[3]),
             )
     return x
+
+class FocalLoss(nn.Module):
+    """ Focal Loss, as described in https://arxiv.org/abs/1708.02002.
+
+    It is essentially an enhancement to cross entropy loss and is
+    useful for classification tasks when there is a large class imbalance.
+    x is expected to contain raw, unnormalized scores for each class.
+    y is expected to contain class labels.
+
+    Shape:
+        - x: (batch_size, C) or (batch_size, C, d1, d2, ..., dK), K > 0.
+        - y: (batch_size,) or (batch_size, d1, d2, ..., dK), K > 0.
+    """
+
+    def __init__(self,
+                 alpha: Optional[torch.Tensor] = None,
+                 gamma: float = 0.,
+                 reduction: str = 'mean',
+                 ignore_index: int = -100):
+        """Constructor.
+
+        Args:
+            alpha (Tensor, optional): Weights for each class. Defaults to None.
+            gamma (float, optional): A constant, as described in the paper.
+                Defaults to 0.
+            reduction (str, optional): 'mean', 'sum' or 'none'.
+                Defaults to 'mean'.
+            ignore_index (int, optional): class label to ignore.
+                Defaults to -100.
+        """
+        if reduction not in ('mean', 'sum', 'none'):
+            raise ValueError(
+                'Reduction must be one of: "mean", "sum", "none".')
+
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.ignore_index = ignore_index
+        self.reduction = reduction
+
+        self.nll_loss = nn.NLLLoss(
+            weight=alpha, reduction='none', ignore_index=ignore_index)
+
+    def __repr__(self):
+        arg_keys = ['alpha', 'gamma', 'ignore_index', 'reduction']
+        arg_vals = [self.__dict__[k] for k in arg_keys]
+        arg_strs = [f'{k}={v!r}' for k, v in zip(arg_keys, arg_vals)]
+        arg_str = ', '.join(arg_strs)
+        return f'{type(self).__name__}({arg_str})'
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        if x.ndim > 2:
+            # (N, C, d1, d2, ..., dK) --> (N * d1 * ... * dK, C)
+            c = x.shape[1]
+            x = x.permute(0, *range(2, x.ndim), 1).reshape(-1, c)
+            # (N, d1, d2, ..., dK) --> (N * d1 * ... * dK,)
+            y = y.view(-1)
+
+        unignored_mask = y != self.ignore_index
+        y = y[unignored_mask]
+        if len(y) == 0:
+            return torch.tensor(0.)
+        x = x[unignored_mask]
+
+        # compute weighted cross entropy term: -alpha * log(pt)
+        # (alpha is already part of self.nll_loss)
+        log_p = F.log_softmax(x, dim=-1)
+        ce = self.nll_loss(log_p, y)
+
+        # get true class column from each row
+        all_rows = torch.arange(len(x))
+        log_pt = log_p[all_rows, y]
+
+        # compute focal term: (1 - pt)^gamma
+        pt = log_pt.exp()
+        focal_term = (1 - pt)**self.gamma
+
+        # the full loss: -alpha * ((1 - pt)^gamma) * log(pt)
+        loss = focal_term * ce
+
+        if self.reduction == 'mean':
+            loss = loss.mean()
+        elif self.reduction == 'sum':
+            loss = loss.sum()
+
+        return loss

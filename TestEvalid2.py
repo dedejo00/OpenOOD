@@ -53,7 +53,7 @@ config.parse_refs()
 id_loader_dict = get_dataloader(config)
 #ood_loader_dict = get_ood_dataloader(config)
 # init network
-nca = get_network(config.network).cuda()
+#nca = get_network(config.network).cuda()
 # init ood evaluator
 #evaluator = get_evaluator(config)
 
@@ -67,7 +67,6 @@ def eval_selfclass_pathmnist(
     device = torch.device("cuda:%d" % gpu_index if gpu_index >= 0 else "cpu")
 
     num_classes = 10
-    """
     nca = NCA_WITH_HEAD(
         device,
         num_image_channels=3,
@@ -77,17 +76,19 @@ def eval_selfclass_pathmnist(
         num_learned_filters=0,
         use_alive_mask=False,
         fire_rate=0.8,
+        steps=20,
         filter_padding="circular",
         pad_noise=True,
     )
     nca.load_state_dict(
-        torch.load("results/" + "Model with HeadTrue_c.hidden_30_gc_False_noise_True_AM_False_steps_60class_cifar10.best.pth",
+        torch.load("results/" + "Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best.pth",
                    weights_only=True,
                    map_location=device)
     )
-    nca = nca.to(device)
+    nca.to(device)
+    print(nca)
     nca.eval()
-"""
+
 
     pred = []
     gt = []
@@ -100,7 +101,7 @@ def eval_selfclass_pathmnist(
         x = z['data']
         y = z['label']
         x = x.float().to(device)
-        steps = 60
+        steps = 20
         y_prob = nca.forward(x, steps)
 
         y = y.squeeze()
@@ -126,4 +127,4 @@ def main(hidden_channels, gpu: bool, gpu_index: int, batch_size: int):
 
 
 if __name__ == "__main__":
-    main(30, True, 0, 64)
+    main(50, True, 0, 64)

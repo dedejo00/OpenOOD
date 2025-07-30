@@ -67,6 +67,7 @@ class BasicNCAModel(nn.Module):
         pixel_wise_loss: bool = False,
         threshold_activations_react: float = None,
         threshold_cell_states_react: float = None,
+        use_temporal_encoding: bool = True
     ):
         """
         Constructor.
@@ -114,6 +115,7 @@ class BasicNCAModel(nn.Module):
         self.num_classes = num_classes
         self.pixel_wise_loss = pixel_wise_loss
         self.validation_metric = "accuracy_micro"
+        self.use_temporal_encoding = use_temporal_encoding
 
         #ReAct
         self.threshold_activations_react = threshold_activations_react
@@ -147,11 +149,18 @@ class BasicNCAModel(nn.Module):
                 self.filters.append(laplace)
             self.num_filters = len(self.filters)
 
+        input_vector_size = self.num_channels * (self.num_filters + 1)
+        if self.use_temporal_encoding:
+            input_vector_size += 1
         self.network = nn.Sequential(
             nn.Linear(
-                self.num_channels * (self.num_filters + 1) + 1, self.hidden_size, bias=True
+                input_vector_size,
+                self.hidden_size * 2,
+                bias=True,
             ),
-            nn.ReLU(),
+            nn.LeakyReLU(),
+            nn.Linear(self.hidden_size * 2, self.hidden_size, bias=False),
+            nn.LeakyReLU(),
             nn.Linear(self.hidden_size, self.num_channels, bias=False),
         ).to(device)
 
@@ -184,7 +193,7 @@ class BasicNCAModel(nn.Module):
         )
         return mask
 
-    def _perceive(self, x):
+    def _perceive(self, x, step):
         def _perceive_with(x, weight):
             if isinstance(weight, nn.Conv2d):
                 return weight(x)
@@ -199,6 +208,12 @@ class BasicNCAModel(nn.Module):
 
         perception = [x]
         perception.extend([_perceive_with(x, w) for w in self.filters])
+        if self.use_temporal_encoding:
+            perception.append(
+                torch.mul(
+                    torch.ones((x.shape[0], 1, x.shape[2], x.shape[3])), step / 100
+                ).to(self.device)
+            )
         y = torch.cat(perception, 1)
         return y
 
@@ -209,17 +224,12 @@ class BasicNCAModel(nn.Module):
         assert x.shape[1] == self.num_channels
 
         # Perception
-        dx = self._perceive(x)
+        dx = self._perceive(x, step)
 
         # Compute delta from FFNN network
         dx = dx.permute(0, 2, 3, 1)  # B C W H --> B W H C
 
         if self.threshold_activations_react:
-            int_tensor = torch.tensor(float(step))
-            # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
-            int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
-                self.device)
-            dx = torch.cat([dx, int_tensor_expanded], dim=3)
             feature = self.network[-3:-2](dx)
             # print(dx.shape)
             feature = feature.clip(max=self.threshold_activations_react)
@@ -227,11 +237,6 @@ class BasicNCAModel(nn.Module):
             # print(feature.shape)
             dx = self.network[-2:](feature)
         else:
-            int_tensor = torch.tensor(float(step))
-            # Reshape + expand: [1] -> [1, 1, 1, 1] -> [128, 32, 32, 1]
-            int_tensor_expanded = int_tensor.view(1, 1, 1, 1).expand(dx.shape[0], dx.shape[1], dx.shape[2], 1).to(
-                self.device)
-            dx = torch.cat([dx, int_tensor_expanded], dim=3)
             dx = self.network(dx)
 
         # Stochastic weight update
@@ -406,78 +411,6 @@ class BasicNCAModel(nn.Module):
             "classification": loss_classification,
         }
 
-    def get_meta_dict(self) -> dict:
-        return dict(
-            device=str(self.device),
-            num_image_channels=self.num_image_channels,
-            num_hidden_channels=self.num_hidden_channels,
-            num_output_channels=self.num_output_channels,
-            fire_rate=self.fire_rate,
-            hidden_size=self.hidden_size,
-            use_alive_mask=self.use_alive_mask,
-            immutable_image_channels=self.immutable_image_channels,
-            num_learned_filters=self.num_learned_filters,
-            dx_noise=self.dx_noise,
-            **self.meta,
-        )
-
-    def finetune(self):
-        """
-        Prepare model for fine tuning by freezing everything except the final layer,
-        and setting to "train" mode.
-        """
-        self.train()
-        if self.num_learned_filters != 0:
-            for filter in self.filters:
-                filter.requires_grad_ = False
-        for layer in self.network[:-1]:
-            layer.requires_grad_ = False
-
-    """
-    def metrics(self, pred: torch.Tensor, label: torch.Tensor) -> Dict[str, float]:
-        
-        Return dict of standard evaluation metrics.
-
-        :param pred [torch.Tensor]: Predicted image.
-        :param label [torch.Tensor]: Ground truth label.
-        
-        accuracy_macro_metric = MulticlassAccuracy(
-            average="macro", num_classes=self.num_classes
-        )
-        accuracy_micro_metric = MulticlassAccuracy(
-            average="micro", num_classes=self.num_classes
-        )
-        auroc_metric = MulticlassAUROC(num_classes=self.num_classes)
-        f1_metric = MulticlassF1Score(num_classes=self.num_classes)
-
-        y_prob = pred[..., -self.num_output_channels :]
-        y_true = label.squeeze()
-        accuracy_macro_metric.update(y_prob, y_true)
-        accuracy_micro_metric.update(y_prob, y_true)
-        auroc_metric.update(y_prob, y_true)
-        f1_metric.update(y_prob, y_true)
-
-        accuracy_macro = accuracy_macro_metric.compute().item()
-        accuracy_micro = accuracy_micro_metric.compute().item()
-        auroc = auroc_metric.compute().item()
-        f1 = f1_metric.compute().item()
-        return {
-            "accuracy_macro": accuracy_macro,
-            "accuracy_micro": accuracy_micro,
-            "f1": f1,
-            "auroc": auroc,
-        }"""
-
-    def get_meta_dict(self) -> dict:
-        meta = super().get_meta_dict()
-        meta.update(
-            dict(
-                num_classes=self.num_classes,
-                pixel_wise_loss=self.pixel_wise_loss,
-            )
-        )
-        return meta
-
     def classify(
         self, image: torch.Tensor, steps: int = 100, reduce: bool = False
     ) -> torch.Tensor:
@@ -543,20 +476,6 @@ class BasicNCAModel(nn.Module):
             x = self.prepare_input(x)
             x = self.forward_intern(x, steps=steps)  # type: ignore[assignment]
             return x
-
-    def validate(
-        self, image: torch.Tensor, label: torch.Tensor, steps: int
-    ) -> Tuple[Dict[str, float], torch.Tensor]:
-        """
-        :param image [torch.Tensor]: Input image, BCWH
-        :param label [torch.Tensor]: Ground truth label
-        :param steps [int]: Inference steps
-
-        :returns [Tuple[float, torch.Tensor]]: Validation metric, predicted image BWHC
-        """
-        pred = self.classify(image.to(self.device), steps=steps)
-        metrics = self.metrics(pred, label.to(self.device))
-        return metrics, pred
 
 def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
     """
