@@ -8,10 +8,10 @@ import numpy as np
 import torch  # type: ignore[import-untyped]
 import torch.nn as nn  # type: ignore[import-untyped]
 import torch.nn.functional as F  # type: ignore[import-untyped]
-from torch import Tensor
 
 
-class ClassificationNCA(nn.Module):
+
+class ClassificationNCAHead(nn.Module):
     """
     Abstract base class for NCA models.
     """
@@ -22,7 +22,7 @@ class ClassificationNCA(nn.Module):
         num_image_channels: int,
         num_hidden_channels: int,
         num_output_channels: int,
-        fire_rate: float = 0.5,
+        fire_rate: float = 0.8,
         hidden_size: int = 128,
         use_alive_mask: bool = False,
         immutable_image_channels: bool = True,
@@ -55,7 +55,7 @@ class ClassificationNCA(nn.Module):
         :param pad_noise [bool]: Whether to pad input image tensor with noise in hidden / output channels
         :param autostepper [Optional[AutoStepper]]: AutoStepper object to select number of time steps based on activity
         """
-        super(ClassificationNCA, self).__init__()
+        super(ClassificationNCAHead, self).__init__()
 
         self.device = device
         self.to(device)
@@ -130,7 +130,18 @@ class ClassificationNCA(nn.Module):
         with torch.no_grad():
             self.network[-1].weight.data.fill_(0)
 
-        self.meta: dict = {}
+        pool_size = 8
+        self.classifierHead = nn.Sequential(
+            nn.Linear(
+                int(self.num_output_channels) * pool_size * pool_size, 256, bias=True
+            ),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(),
+            nn.Linear(256, 128, bias=True),
+            nn.Dropout(p=0.7),
+            nn.LeakyReLU(),
+            nn.Linear(128, self.num_output_channels, bias=False),
+        ).to(device)
 
     def prepare_input(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -217,69 +228,6 @@ class ClassificationNCA(nn.Module):
             x = x.permute(1, 0, 2, 3)  # C B W H --> B C W H
         return x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classify(x, self.steps)
-
-    def forward_return_timesteps(self, x: torch.Tensor, steps: int = 20) -> torch.Tensor:
-        logits_list = []
-        with torch.no_grad():
-            x = pad_input(x, self, noise=self.pad_noise)
-            for step in range(steps):
-                x = self._update(x, step)
-                x_copy = x.clone()
-                x_copy.permute((0,2,3,1))
-                class_channels = torch.tensor(x_copy[
-                    ..., self.num_image_channels + self.num_hidden_channels:
-                ])
-                # Average over all pixels if a single categorial prediction is desired
-                y_pred = class_channels
-                y_pred = torch.mean(y_pred, dim=(1, 2))
-                logits = F.softmax(y_pred, dim=-1),
-                logits_list.append(logits)
-        return logits_list
-
-
-    def forward_intern(
-        self,
-        x: torch.Tensor,
-        steps: int = 1,
-        return_steps: bool = False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, int]:
-        """
-        :param x [torch.Tensor]: Input image, padded along the channel dimension, BCWH.
-        :param steps [int]: Time steps in forward pass.
-        :param return_steps [bool]: Whether to return number of steps we took.
-
-        :returns: Output image, BWHC
-        """
-        for step in range(steps):
-            x = self._update(x, step)
-            if self.save_cell_state and step == int(steps*0.9):
-                self.latest_cell_state = x.clone().cpu()
-        x = x.permute((0, 2, 3, 1))  # --> BWHCf
-        if return_steps:
-            return x, steps
-        return x
-
-    def finetune(self):
-        """
-        Prepare model for fine tuning by freezing everything except the final layer,
-        and setting to "train" mode.
-        """
-        self.train()
-        if self.num_learned_filters != 0:
-            for filter in self.filters:
-                filter.requires_grad_ = False
-        for layer in self.network[:-1]:
-            layer.requires_grad_ = False
-
-    def forward_head(
-            self,
-            x: torch.Tensor,
-            steps: int = 1,
-            return_steps: bool = False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, int]:
-        return {}
 
     def predict(self, image: torch.Tensor, steps: int = 100) -> tuple[Any, Any]:
         """
@@ -294,88 +242,75 @@ class ClassificationNCA(nn.Module):
             x = image.clone()
             x = pad_input(x, self, noise=self.pad_noise)
             x = self.prepare_input(x)
-            x = self.forward_intern(x, steps=steps)  # type: ignore[assignment]
+            x = self.forward_head(x, steps=steps)  # type: ignore[assignment]
             return x
 
-    def validate(
-        self, image: torch.Tensor, label: torch.Tensor, steps: int
-    ) -> Tuple[Dict[str, float], torch.Tensor]:
+    def forward_head(
+        self,
+        x: torch.Tensor,
+        steps: int = 1,
+        return_steps: bool = False,
+    ) -> torch.Tensor | Tuple[torch.Tensor, int]:
         """
-        :param image [torch.Tensor]: Input image, BCWH
-        :param label [torch.Tensor]: Ground truth label
-        :param steps [int]: Inference steps
+        :param x [torch.Tensor]: Input image, padded along the channel dimension, BCWH.
+        :param steps [int]: Time steps in forward pass.
+        :param return_steps [bool]: Whether to return number of steps we took.
 
-        :returns [Tuple[float, torch.Tensor]]: Validation metric, predicted image BWHC
+        :returns: Output image, BWHC
         """
-        pred = self.classify(image.to(self.device), steps=steps)
-        metrics = self.metrics(pred, label.to(self.device))
-        return metrics, pred
+        for step in range(steps):
+            x = self._update(x, step)
+        x = x.permute(0, 2, 3, 1)
+        class_channels = x[
+            ..., self.num_image_channels + self.num_hidden_channels :
+        ]
+        class_channels = class_channels.permute(0, 3, 1, 2)
+        max = F.adaptive_avg_pool2d(class_channels, (8, 8))
+        max = max.view(max.size(0), -1)
+        x = self.classifierHead(max)
+        x = F.log_softmax(x, dim=1)
+        if return_steps:
+            return x, steps
+        return x
 
 
-    def classify(
-        self, image: torch.Tensor, steps: int = 100, reduce: bool = False, return_class_channel = False
-    ) -> Tensor | tuple[Tensor, tuple]:
+    def classify(self, image: torch.Tensor, steps: int = 100) -> torch.Tensor:
         """
-        Predict classification for an input image.
+        :param image [torch.Tensor]: Input image, BCWH.
 
-        :param image [torch.Tensor]: Input image.
-        :param steps [int]: Inference steps. Defaults to 100.
-        :param reduce [bool]: Return a single softmax probability. Defaults to False.
-
-        :returns [torch.Tensor]: Single class index or vector of logits.
+        :returns [torch.Tensor]: Output image, BWHC
         """
-
-        with torch.no_grad():
-            x = image.clone()
-            x = pad_input(x, self, noise=self.pad_noise)
-            #x = self.prepare_input(x)
-            x = self.predict(x, steps=steps)
-
-            class_channels = torch.tensor(x[
-                ..., self.num_image_channels + self.num_hidden_channels :
-            ])
-
-            # Average over all pixels if a single categorial prediction is desired
-            y_pred = class_channels
-            y_pred = torch.mean(y_pred, dim=(1,2))
-            y_pred = F.softmax(y_pred, dim=-1),
-
-            # If reduce enabled, reduce to a single scalar.
-            # Otherwise, return logits of all channels as a vector.
-            if reduce:
-                y_pred = torch.argmax(y_pred, dim=-1)
-                return y_pred
-            if return_class_channel:
-                class_channels = F.softmax(class_channels, dim=-1)
-                return y_pred[0] ,class_channels
-            return y_pred[0]
+        x = image.clone()
+        x = pad_input(x, self, noise=self.pad_noise)
+        x = self.prepare_input(x)
+        return self.forward_head(x, steps)
 
 
-    def classify_partial_results(self, x_pred):
-        hidden_channels = torch.from_numpy(x_pred[
-            ...,
-            self.num_image_channels: self.num_image_channels
-                                     + self.num_hidden_channels,
-        ])
+    def forward(self, x, return_feature=False, return_feature_list=False):
+        x = pad_input(x, self, noise=self.pad_noise)
+        x = self.prepare_input(x)
+        for step in range(self.steps):
+            x = self._update(x, step)
+        x = x.permute(0, 2, 3, 1)
+        class_channels = x[
+            ..., self.num_image_channels + self.num_hidden_channels :
+        ]
+        class_channels = class_channels.permute(0, 3, 1, 2)
+        max = F.adaptive_avg_pool2d(class_channels, (8, 8))
+        max = max.view(max.size(0), -1)
+        feat = self.classifierHead[0:4](max)
+        x = self.classifierHead[4:7](feat)
+        #x = self.classifierHead(max)
+        x = F.log_softmax(x, dim=1)
+        if return_feature:
+            return x, feat
+        return x
 
-        class_channels = torch.from_numpy(x_pred[
-            ..., self.num_image_channels + self.num_hidden_channels:
-        ])
-
-        # mask inactive pixels
-        for i in range(self.num_image_channels):
-            mask = torch.max(hidden_channels[i]) > 0.1
-            class_channels[i] *= mask
-
-        # Average over all pixels if a single categorial prediction is desired
-        y_pred = F.softmax(class_channels, dim=-1)
-        y_pred = torch.mean(y_pred, dim=1)
-        y_pred = torch.mean(y_pred, dim=1)
-        y_pred = torch.argmax(y_pred, dim=-1)
-        return y_pred
+    def get_fc_layer(self):
+        return self.classifierHead[4:7]
 
 
-def pad_input(x: torch.Tensor, nca: "ClassificationNCA", noise: bool = True) -> torch.Tensor:
+def pad_input(x: torch.Tensor, nca: "BasicNCAModel", noise: bool = True) -> torch.Tensor:
     """
     Pads input tensor along channel dimension to match the expected number of
     channels required by the NCA model. Pads with either Gaussian noise or zeros,

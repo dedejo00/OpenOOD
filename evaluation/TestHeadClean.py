@@ -16,7 +16,7 @@ import os.path as osp
 config_files = [
     './configs/datasets/cifar10/cifar10.yml',
     './configs/datasets/cifar10/cifar10_ood.yml',
-    './configs/networks/react_net_nca.yml',
+    './configs/networks/nca_head.yml',
     './configs/pipelines/test/test_ood.yml',
     './configs/preprocessors/base_preprocessor.yml',
     './configs/postprocessors/msp.yml',
@@ -32,7 +32,7 @@ config.parse_refs()
 id_loader_dict = get_dataloader(config)
 ood_loader_dict = get_ood_dataloader(config)
 # init network
-net = get_network(config.network).cuda()
+net = get_network(config.network).to(config.device)
 # init ood evaluator
 evaluator = get_evaluator(config)
 
@@ -62,10 +62,10 @@ for mode in modes:
                   position=0,
                   leave=True):
         batch = next(dataiter)
-        data = batch['data'].cuda()
+        data = batch['data'].to(config.device)
         label = batch['label']
         with torch.no_grad():
-            logits_cls = net.forward_threshold(data, threshold=0.062438145)
+            logits_cls = net.forward(data)
         logits_list.append(logits_cls.data.to('cpu').numpy())
         #feature_list.append(feature.data.to('cpu').numpy())
         label_list.append(label.numpy())
@@ -95,11 +95,11 @@ for ood_split in ood_splits:
                       position=0,
                       leave=True):
             batch = next(dataiter)
-            data = batch['data'].cuda()
+            data = batch['data'].to(config.device)
             label = batch['label']
 
             with torch.no_grad():
-                logits_cls = net.forward_threshold(data, threshold=0.062438145)
+                logits_cls = net.forward(data)
             logits_list.append(logits_cls.data.to('cpu').numpy())
             #feature_list.append(feature.data.to('cpu').numpy())
             label_list.append(label.numpy())
@@ -159,6 +159,14 @@ def print_nested_dict(dict_obj, indent = 0):
 
 print_nested_dict(results)
 
+from openood.evaluators.metrics import compute_all_metrics, acc
+
+def eval_id(postprocess_results):
+    for mode_res in postprocess_results['id']:
+        print(postprocess_results['id'][mode_res])
+        accuracy = acc(postprocess_results['id'][mode_res][0], postprocess_results['id'][mode_res][2])
+        print("ID Accuracy: {:.2f}".format(accuracy * 100), flush=True)
+
 # get pred, conf, gt from MSP postprocessor (can change to your custom_postprocessor here)
 postprocess_results = dict()
 # id
@@ -169,6 +177,8 @@ for mode in modes:
     pred, conf = pred.numpy(), conf.numpy()
     gt = results['id'][mode]['labels']
     postprocess_results['id'][mode] = [pred, conf, gt]
+
+eval_id(postprocess_results)
 
 # ood
 split_types = ['nearood', 'farood']
@@ -194,7 +204,7 @@ def print_all_metrics(metrics):
     print(u'\u2500' * 70, flush=True)
 
 
-from openood.evaluators.metrics import compute_all_metrics
+
 
 def eval_ood(postprocess_results):
     [id_pred, id_conf, id_gt] = postprocess_results['id']['test']
@@ -222,3 +232,43 @@ def eval_ood(postprocess_results):
         print_all_metrics(metrics_mean)
 
 eval_ood(postprocess_results)
+
+
+"""
+ID Accuracy: 60.87
+Performing evaluation on nearood datasets...
+Computing metrics on cifar100 dataset...
+FPR@95: 82.01, AUROC: 63.54 AUPR_IN: 65.55, AUPR_OUT: 59.67
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing metrics on tin dataset...
+FPR@95: 77.50, AUROC: 66.87 AUPR_IN: 72.32, AUPR_OUT: 59.43
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing mean metrics...
+FPR@95: 79.76, AUROC: 65.20 AUPR_IN: 68.94, AUPR_OUT: 59.55
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Performing evaluation on farood datasets...
+Computing metrics on mnist dataset...
+FPR@95: 79.06, AUROC: 57.95 AUPR_IN: 27.05, AUPR_OUT: 89.92
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing metrics on svhn dataset...
+FPR@95: 64.68, AUROC: 70.46 AUPR_IN: 57.95, AUPR_OUT: 83.48
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing metrics on texture dataset...
+FPR@95: 83.83, AUROC: 63.45 AUPR_IN: 73.53, AUPR_OUT: 48.12
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing metrics on place365 dataset...
+FPR@95: 82.73, AUROC: 63.44 AUPR_IN: 34.15, AUPR_OUT: 85.55
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+Computing mean metrics...
+FPR@95: 77.58, AUROC: 63.83 AUPR_IN: 48.17, AUPR_OUT: 76.76
+ACC: 60.87
+──────────────────────────────────────────────────────────────────────
+
+"""

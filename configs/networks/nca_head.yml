@@ -1,0 +1,10 @@
+network:
+  name: nca_head
+  num_classes: 10
+  num_hidden_channels: 50
+  pretrained: True
+  steps: 20
+  num_gpus: 1
+  num_machines: 1
+  device: "cuda:0"
+  checkpoint: 'weights/Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best(1).pth'

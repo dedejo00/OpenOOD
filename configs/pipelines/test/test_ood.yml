@@ -9,6 +9,7 @@ num_gpus: 1
 num_workers: 0
 num_machines: 1
 machine_rank: 0
+device: 'cuda:0'
 
 pipeline:
   name: test_ood

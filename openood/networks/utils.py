@@ -38,7 +38,8 @@ from .wrn import WideResNet
 from .rts_net import RTSNet
 from .palm_net import PALMNet
 from .ascood_net import ASCOODNet
-from .nca import BasicNCAModel
+from .nca import ClassificationNCA
+from .nca_classification_head import ClassificationNCAHead
 
 
 def get_network(network_config):
@@ -368,16 +369,21 @@ def get_network(network_config):
         net = {'encoder': encoder, 'bn': bn, 'decoder': decoder}
     elif network_config.name == 'nca':
         #TODO: Add config
-        net = BasicNCAModel(
+        net = ClassificationNCA(
         device=network_config.device,
         num_output_channels=10,
         num_image_channels=3,
-        num_hidden_channels=20,
-        num_classes=10,
-        use_alive_mask=False,
-        fire_rate=0.5,
-        filter_padding="circular",
-        pad_noise=True)
+        num_hidden_channels=network_config.num_hidden_channels,
+        steps=int(network_config.steps),
+        )
+    elif network_config.name == 'nca_head':
+        net = ClassificationNCAHead(
+        device=network_config.device,
+        num_output_channels=10,
+        num_image_channels=3,
+        num_hidden_channels=int(network_config.num_hidden_channels),
+        steps=int(network_config.steps),
+        ).to(network_config.device)
     else:
         raise Exception('Unexpected Network Architecture!')
     print(network_config)
@@ -409,11 +415,8 @@ def get_network(network_config):
             pass
         else:
             try:
-                print(network_config.name)
-                print(network_config.checkpoint)
-                torch.load(network_config.checkpoint)
-                print(net)
-                net.load_state_dict(torch.load(network_config.checkpoint),
+                checkpoint = torch.load(network_config.checkpoint, map_location='cuda:0')
+                net.load_state_dict(checkpoint,
                                     strict=False)
             except RuntimeError:
                 # sometimes fc should not be loaded

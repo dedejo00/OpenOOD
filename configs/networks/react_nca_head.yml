@@ -4,15 +4,16 @@ network:
   image_size: '@{dataset.image_size}'
   pretrained: False
   checkpoint: none           # ignore if pretrained is false
-  num_gpus: '@{num_gpus}'
+  num_gpus: 1
   similarity_measure: 'cosine' # value in ['cosine', 'inner', 'euclid']
 
   # network used for feature extraction
   backbone:
-    name: nca
+    name: nca_head
     num_classes: '@{dataset.num_classes}'
-    num_hidden_channels: 40
-    pretrained: True,
+    num_hidden_channels: 50
+    pretrained: True
+    steps: 20
     device: "cuda:0"
-    checkpoint: 'results/class_cifar10.best.pth'
-    num_gpus: '@{num_gpus}'
+    checkpoint: 'weights/Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best(1).pth'
+    num_gpus: 1
