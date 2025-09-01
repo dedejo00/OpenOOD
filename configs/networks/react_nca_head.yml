@@ -15,5 +15,5 @@ network:
     pretrained: True
     steps: 20
     device: "cuda:0"
-    checkpoint: 'results/Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best.pth'
+    checkpoint: 'weights/Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best(1).pth'
     num_gpus: 1

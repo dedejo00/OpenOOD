@@ -38,8 +38,8 @@ from .wrn import WideResNet
 from .rts_net import RTSNet
 from .palm_net import PALMNet
 from .ascood_net import ASCOODNet
-from .nca import BasicNCAModel
-from .nca_classification_head import NCA_WITH_HEAD
+from .nca import ClassificationNCA
+from .nca_classification_head import ClassificationNCAHead
 
 
 def get_network(network_config):
@@ -369,29 +369,19 @@ def get_network(network_config):
         net = {'encoder': encoder, 'bn': bn, 'decoder': decoder}
     elif network_config.name == 'nca':
         #TODO: Add config
-        net = BasicNCAModel(
+        net = ClassificationNCA(
         device=network_config.device,
         num_output_channels=10,
         num_image_channels=3,
-        num_hidden_channels=20,
-        num_classes=10,
-        use_alive_mask=False,
-        fire_rate=0.8,
-        num_learned_filters=0,
-        filter_padding="circular",
-        pad_noise=True)
+        num_hidden_channels=network_config.num_hidden_channels,
+        steps=int(network_config.steps),
+        )
     elif network_config.name == 'nca_head':
-        net = NCA_WITH_HEAD(
+        net = ClassificationNCAHead(
         device=network_config.device,
         num_output_channels=10,
         num_image_channels=3,
         num_hidden_channels=int(network_config.num_hidden_channels),
-        num_classes=10,
-        num_learned_filters=0,
-        use_alive_mask=False,
-        fire_rate=0.8,
-        filter_padding="circular",
-        pad_noise=True,
         steps=int(network_config.steps),
         ).to(network_config.device)
     else:
@@ -425,10 +415,7 @@ def get_network(network_config):
             pass
         else:
             try:
-                print(network_config.name)
-                print(network_config.checkpoint)
                 checkpoint = torch.load(network_config.checkpoint, map_location='cuda:0')
-                print(net)
                 net.load_state_dict(checkpoint,
                                     strict=False)
             except RuntimeError:

@@ -11,6 +11,7 @@ network:
   backbone:
     name: nca
     num_classes: '@{dataset.num_classes}'
+    num_hidden_channels: 40
     pretrained: True,
     device: "cuda:0"
     checkpoint: 'results/class_cifar10.best.pth'

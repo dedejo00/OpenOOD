@@ -6,7 +6,7 @@ from openood.evaluation_api import Evaluator
 from openood.networks import ResNet18_32x32 # just a wrapper around the ResNet
 
 config_files = [
-    './configs/networks/react_nca_head.yml',
+    './configs/networks/nca_head.yml',
 ]
 
 config = config.Config(*config_files)
@@ -16,7 +16,7 @@ net = get_network(config.network).to(config.device)
 net.eval()
 
 #@title choose an implemented postprocessor
-postprocessor_name = "temp_scaling"
+postprocessor_name = "react"
 
 evaluator = Evaluator(
     net,

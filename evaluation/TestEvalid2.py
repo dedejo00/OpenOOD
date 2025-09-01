@@ -5,7 +5,8 @@ from time import sleep
 
 import torchvision
 
-from openood.networks.nca_classification_head import NCA_WITH_HEAD
+from openood.networks.nca_classification_head import ClassificationNCAHead
+from openood.networks.nca import ClassificationNCA
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root_dir)
@@ -37,7 +38,7 @@ from tqdm import tqdm
 config_files = [
     './configs/datasets/cifar10/cifar10.yml',
     './configs/datasets/cifar10/cifar10_ood.yml',
-    './configs/networks/react_nca_head.yml',
+    './configs/networks/nca.yml',
     './configs/pipelines/test/test_ood.yml',
     './configs/preprocessors/base_preprocessor.yml',
     './configs/postprocessors/msp.yml',
@@ -53,7 +54,7 @@ config.parse_refs()
 id_loader_dict = get_dataloader(config)
 #ood_loader_dict = get_ood_dataloader(config)
 # init network
-#nca = get_network(config.network).cuda()
+nca = get_network(config.network).cuda()
 # init ood evaluator
 #evaluator = get_evaluator(config)
 
@@ -67,25 +68,18 @@ def eval_selfclass_pathmnist(
     device = torch.device("cuda:%d" % gpu_index if gpu_index >= 0 else "cpu")
 
     num_classes = 10
-    nca = NCA_WITH_HEAD(
+    nca = ClassificationNCA(
         device,
         num_image_channels=3,
         num_hidden_channels=hidden_channels,
         num_output_channels=num_classes,
-        num_classes=num_classes,
-        num_learned_filters=0,
-        use_alive_mask=False,
-        fire_rate=0.8,
-        steps=20,
-        filter_padding="circular",
-        pad_noise=True,
+
     )
     nca.load_state_dict(
-        torch.load("results/" + "Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best.pth",
+        torch.load( "./weights" + "/" + "Model with HeadFalse_c.hidden_40_steps_20class_cifar10.best.pth",
                    weights_only=True,
                    map_location=device)
     )
-    nca.to(device)
     print(nca)
     nca.eval()
 
@@ -102,9 +96,11 @@ def eval_selfclass_pathmnist(
         y = z['label']
         x = x.float().to(device)
         steps = 20
-        y_prob = nca.forward(x, steps)
+        y_prob = nca.classify(x, steps=steps)
 
         y = y.squeeze()
+        print(y_prob)
+        print(y_prob.shape)
         pred.extend(torch.argmax(y_prob, dim=1).detach().cpu().numpy().tolist())
         gt.extend(y.cpu().numpy().tolist())
     pred = np.array(pred)
@@ -127,4 +123,4 @@ def main(hidden_channels, gpu: bool, gpu_index: int, batch_size: int):
 
 
 if __name__ == "__main__":
-    main(50, True, 0, 64)
+    main(40, True, 0, 64)

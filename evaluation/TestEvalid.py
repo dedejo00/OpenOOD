@@ -5,7 +5,8 @@ from time import sleep
 
 import torchvision
 
-from openood.networks.nca_classification_head import NCA_WITH_HEAD
+from openood.networks.nca_classification_head import ClassificationNCAHead
+from openood.networks.nca import ClassificationNCA
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root_dir)
@@ -44,30 +45,25 @@ def eval_selfclass_pathmnist(
     device = torch.device("cuda:%d" % gpu_index if gpu_index >= 0 else "cpu")
 
 
-    testset = torchvision.datasets.CIFAR10(root='./data', train=True,
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                            download=True, transform=T)
     loader_test = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
 
     num_classes = 10
-    nca = NCA_WITH_HEAD(
+    nca = ClassificationNCA(
         device,
         num_image_channels=3,
-        num_hidden_channels=hidden_channels,
+        num_hidden_channels=40,
         num_output_channels=num_classes,
-        num_classes=num_classes,
-        num_learned_filters=0,
-        use_alive_mask=False,
-        fire_rate=0.8,
-        filter_padding="circular",
-        pad_noise=True,
+
     )
     nca.load_state_dict(
-        torch.load("results/" + "Model with HeadTrue_c.hidden_50_steps_20class_cifar10.best.pth",
+        torch.load( "./weights" + "/" + "Model with HeadFalse_c.hidden_40_steps_20class_cifar10.best.pth",
                    weights_only=True,
                    map_location=device)
     )
-    print(nca)
+    print(vars(nca))
     model_parameters = filter(lambda p: p.requires_grad, nca.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print(f"Trainable parameters: {params}")
